@@ -665,10 +665,11 @@ def main():
         current_lang_name = language_names[st.session_state.language]
         
         selected_lang_name = st.selectbox(
-            "",
+            "Language",
             options=list(language_names.values()),
             index=list(language_names.values()).index(current_lang_name),
-            key="language_selector"
+            key="language_selector",
+            label_visibility="collapsed"
         )
         
         # Update language if changed
