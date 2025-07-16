@@ -30,6 +30,8 @@ Una aplicación web moderna desarrollada con Streamlit para la clasificación au
   - `MobileNetV2_osteosarcoma.h5`
   - `EfficientNetB0_osteosarcoma.h5`
 
+Puedes descargar los modelos desde [Hugging Face](https://huggingface.co/tecncr/osteosarcoma-detect) o entrenarlos tú mismo siguiendo las instrucciones en el notebook de entrenamiento.
+
 ### Instalación
 
 1. **Clonar o descargar el proyecto**
