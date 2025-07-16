@@ -20,12 +20,17 @@ from reportlab.lib import colors
 import tempfile
 import os
 import warnings
+from i18n import get_text, get_class_names, get_class_descriptions, get_model_descriptions, get_available_languages, get_language_names
 warnings.filterwarnings('ignore')
+
+# Initialize session state for language
+if 'language' not in st.session_state:
+    st.session_state.language = 'es'  # Default to Spanish
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Clasificador de Osteosarcoma",
-    page_icon="🔬",
+    page_title=get_text('page_title', st.session_state.language),
+    page_icon=get_text('page_icon', st.session_state.language),
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -118,49 +123,32 @@ st.markdown("""
 def load_models():
     """Carga todos los modelos pre-entrenados"""
     models = {}
-    model_info = {
-        'VGG16': {
-            'path': 'models/VGG16_osteosarcoma.h5',
-            'preprocess': vgg_preprocess,
-            'description': 'Arquitectura clásica con capas convolucionales profundas'
-        },
-        'ResNet50': {
-            'path': 'models/ResNet50_osteosarcoma.h5',
-            'preprocess': resnet_preprocess,
-            'description': 'Red residual con conexiones skip para mejor entrenamiento'
-        },
-        'MobileNetV2': {
-            'path': 'models/MobileNetV2_osteosarcoma.h5',
-            'preprocess': mobilenet_preprocess,
-            'description': 'Arquitectura eficiente para dispositivos móviles'
-        },
-        'EfficientNetB0': {
-            'path': 'models/EfficientNetB0_osteosarcoma.h5',
-            'preprocess': efficientnet_preprocess,
-            'description': 'Modelo balanceado entre precisión y eficiencia'
-        }
-    }
     
-    for model_name, info in model_info.items():
+    for model_name in ['VGG16', 'ResNet50', 'MobileNetV2', 'EfficientNetB0']:
         try:
+            model_path = f'models/{model_name}_osteosarcoma.h5'
             models[model_name] = {
-                'model': load_model(info['path']),
-                'preprocess': info['preprocess'],
-                'description': info['description']
+                'model': load_model(model_path),
+                'preprocess': {
+                    'VGG16': vgg_preprocess,
+                    'ResNet50': resnet_preprocess,
+                    'MobileNetV2': mobilenet_preprocess,
+                    'EfficientNetB0': efficientnet_preprocess
+                }[model_name]
             }
         except Exception as e:
-            st.error(f"Error cargando modelo {model_name}: {str(e)}")
+            st.error(f"{get_text('error_loading_model', st.session_state.language)} {model_name}: {str(e)}")
     
     return models
 
-# Configuración de clases
-CLASS_NAMES = ['Non-Tumor', 'Non-Viable-Tumor', 'Viable', 'Mixed']
-CLASS_DESCRIPTIONS = {
-    'Non-Tumor': 'Tejido sin presencia de tumor',
-    'Non-Viable-Tumor': 'Tejido tumoral no viable (necrótico)',
-    'Viable': 'Tejido tumoral viable (activo)',
-    'Mixed': 'Tejido mixto con características combinadas'
-}
+# Configuración de clases - ahora usando i18n
+def get_current_class_names():
+    """Get class names for current language"""
+    return get_class_names(st.session_state.language)
+
+def get_current_class_descriptions():
+    """Get class descriptions for current language"""
+    return get_class_descriptions(st.session_state.language)
 
 def preprocess_image(image, target_size=(224, 224)):
     """Preprocesa una imagen para inferencia"""
@@ -287,13 +275,15 @@ def create_prediction_visualization(probabilities, predictions):
     
     # Crear DataFrame para facilitar la visualización
     prob_data = []
+    class_names = get_current_class_names()
+    
     for model_name, probs in valid_probs.items():
-        for i, class_name in enumerate(CLASS_NAMES):
+        for i, class_name in enumerate(class_names):
             prob_data.append({
-                'Modelo': model_name,
-                'Clase': class_name,
-                'Probabilidad': probs[i],
-                'Predicción': predictions[model_name] == i
+                get_text('models', st.session_state.language): model_name,
+                get_text('class', st.session_state.language): class_name,
+                get_text('probability', st.session_state.language): probs[i],
+                get_text('prediction', st.session_state.language): predictions[model_name] == i
             })
     
     df_probs = pd.DataFrame(prob_data)
@@ -301,11 +291,14 @@ def create_prediction_visualization(probabilities, predictions):
     # Gráfico de barras comparativo
     fig1 = px.bar(
         df_probs, 
-        x='Clase', 
-        y='Probabilidad', 
-        color='Modelo',
-        title='Distribución de Probabilidades por Modelo',
-        labels={'Probabilidad': 'Probabilidad (%)', 'Clase': 'Tipo de Tejido'},
+        x=get_text('class', st.session_state.language), 
+        y=get_text('probability', st.session_state.language), 
+        color=get_text('models', st.session_state.language),
+        title=get_text('probability_distribution', st.session_state.language),
+        labels={
+            get_text('probability', st.session_state.language): get_text('probability', st.session_state.language) + ' (%)', 
+            get_text('class', st.session_state.language): get_text('tissue_type', st.session_state.language)
+        },
         template='plotly_white',
         height=500
     )
@@ -319,16 +312,20 @@ def create_prediction_visualization(probabilities, predictions):
     )
     
     # Heatmap de probabilidades
-    prob_matrix = df_probs.pivot(index='Modelo', columns='Clase', values='Probabilidad')
+    prob_matrix = df_probs.pivot(
+        index=get_text('models', st.session_state.language), 
+        columns=get_text('class', st.session_state.language), 
+        values=get_text('probability', st.session_state.language)
+    )
     
     fig2 = px.imshow(
         prob_matrix.values,
         x=prob_matrix.columns,
         y=prob_matrix.index,
-        title='Mapa de Calor - Probabilidades por Modelo',
+        title=get_text('probability_heatmap', st.session_state.language),
         aspect='auto',
         color_continuous_scale='viridis',
-        labels={'color': 'Probabilidad'},
+        labels={get_text('color', st.session_state.language): get_text('probability', st.session_state.language)},
         height=400
     )
     
@@ -359,24 +356,26 @@ def create_agreement_visualization(agreement_metrics, probability_distances):
     agreement_data = []
     distance_data = []
     
+    class_names = get_current_class_names()
+    
     for comparison, metrics in agreement_metrics.items():
         if comparison != 'all_models_agree':
             models = comparison.split('_vs_')
             agreement_data.append({
-                'Comparación': f"{models[0]} vs {models[1]}",
-                'Concordancia': 'Sí' if metrics['agreement'] else 'No',
-                'Predicción 1': CLASS_NAMES[metrics['pred1']],
-                'Predicción 2': CLASS_NAMES[metrics['pred2']]
+                get_text('comparison', st.session_state.language): f"{models[0]} vs {models[1]}",
+                get_text('concordance', st.session_state.language): get_text('yes', st.session_state.language) if metrics['agreement'] else get_text('no', st.session_state.language),
+                get_text('prediction_1', st.session_state.language): class_names[metrics['pred1']],
+                get_text('prediction_2', st.session_state.language): class_names[metrics['pred2']]
             })
     
     # Preparar datos de distancias
     for comparison, distances in probability_distances.items():
         models = comparison.split('_vs_')
         distance_data.append({
-            'Comparación': f"{models[0]} vs {models[1]}",
-            'Distancia Euclidiana': distances['euclidean'],
-            'Distancia Coseno': distances['cosine'],
-            'Divergencia KL': distances['kl_divergence']
+            get_text('comparison', st.session_state.language): f"{models[0]} vs {models[1]}",
+            get_text('euclidean_distance', st.session_state.language): distances['euclidean'],
+            get_text('cosine_distance', st.session_state.language): distances['cosine'],
+            get_text('kl_divergence', st.session_state.language): distances['kl_divergence']
         })
     
     # Gráfico de concordancia
@@ -384,10 +383,10 @@ def create_agreement_visualization(agreement_metrics, probability_distances):
     
     fig1 = px.bar(
         df_agreement,
-        x='Comparación',
-        color='Concordancia',
-        title='Concordancia entre Modelos',
-        labels={'count': 'Número de Comparaciones'},
+        x=get_text('comparison', st.session_state.language),
+        color=get_text('concordance', st.session_state.language),
+        title=get_text('model_agreement', st.session_state.language),
+        labels={'count': get_text('number_of_comparisons', st.session_state.language)},
         template='plotly_white',
         height=400
     )
@@ -399,15 +398,23 @@ def create_agreement_visualization(agreement_metrics, probability_distances):
     
     fig2 = make_subplots(
         rows=1, cols=3,
-        subplot_titles=('Distancia Euclidiana', 'Distancia Coseno', 'Divergencia KL'),
+        subplot_titles=(
+            get_text('euclidean_distance', st.session_state.language), 
+            get_text('cosine_distance', st.session_state.language), 
+            get_text('kl_divergence', st.session_state.language)
+        ),
         specs=[[{"secondary_y": False}, {"secondary_y": False}, {"secondary_y": False}]]
     )
     
     # Añadir barras para cada métrica de distancia
-    for i, metric in enumerate(['Distancia Euclidiana', 'Distancia Coseno', 'Divergencia KL']):
+    for i, metric in enumerate([
+        get_text('euclidean_distance', st.session_state.language),
+        get_text('cosine_distance', st.session_state.language),
+        get_text('kl_divergence', st.session_state.language)
+    ]):
         fig2.add_trace(
             go.Bar(
-                x=df_distances['Comparación'],
+                x=df_distances[get_text('comparison', st.session_state.language)],
                 y=df_distances[metric],
                 name=metric,
                 showlegend=False
@@ -416,7 +423,7 @@ def create_agreement_visualization(agreement_metrics, probability_distances):
         )
     
     fig2.update_layout(
-        title_text="Distancias entre Distribuciones de Probabilidad",
+        title_text=get_text('probability_distances', st.session_state.language),
         title_x=0.5,
         height=500
     )
@@ -434,6 +441,11 @@ def generate_pdf_report(image, predictions, probabilities, agreement_metrics, pr
         doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=72, bottomMargin=72)
         styles = getSampleStyleSheet()
         story = []
+        
+        # Get current language settings
+        lang = st.session_state.language
+        class_names = get_current_class_names()
+        class_descriptions = get_current_class_descriptions()
         
         # Estilos personalizados
         title_style = ParagraphStyle(
@@ -465,14 +477,14 @@ def generate_pdf_report(image, predictions, probabilities, agreement_metrics, pr
         )
         
         # Título del reporte
-        story.append(Paragraph("🔬 Reporte de Análisis de Osteosarcoma", title_style))
+        story.append(Paragraph(get_text('pdf_report_title', lang), title_style))
         story.append(Spacer(1, 30))
         
         # Información general
-        story.append(Paragraph("📋 Información del Análisis", heading_style))
-        story.append(Paragraph(f"<b>Fecha de análisis:</b> {pd.Timestamp.now().strftime('%d/%m/%Y %H:%M')}", normal_style))
-        story.append(Paragraph(f"<b>Modelos utilizados:</b> VGG16, ResNet50, MobileNetV2, EfficientNetB0", normal_style))
-        story.append(Paragraph(f"<b>Clases analizadas:</b> {', '.join(CLASS_NAMES)}", normal_style))
+        story.append(Paragraph(get_text('analysis_info', lang), heading_style))
+        story.append(Paragraph(f"<b>{get_text('analysis_date', lang)}:</b> {pd.Timestamp.now().strftime(get_text('date_format', lang))}", normal_style))
+        story.append(Paragraph(f"<b>{get_text('models_used', lang)}:</b> VGG16, ResNet50, MobileNetV2, EfficientNetB0", normal_style))
+        story.append(Paragraph(f"<b>{get_text('classes_analyzed', lang)}:</b> {', '.join(class_names)}", normal_style))
         story.append(Spacer(1, 20))
         
         # Crear imagen temporal y añadirla al reporte
@@ -487,7 +499,7 @@ def generate_pdf_report(image, predictions, probabilities, agreement_metrics, pr
             image.save(tmp_file.name, 'PNG', quality=95)
             
             # Añadir imagen al reporte
-            story.append(Paragraph("🖼️ Imagen Analizada", heading_style))
+            story.append(Paragraph(get_text('analyzed_image', lang), heading_style))
             
             try:
                 img_width, img_height = image.size
@@ -507,11 +519,11 @@ def generate_pdf_report(image, predictions, probabilities, agreement_metrics, pr
                 story.append(Spacer(1, 20))
                 
             except Exception as img_error:
-                story.append(Paragraph(f"<i>Error al insertar imagen: {str(img_error)}</i>", normal_style))
+                story.append(Paragraph(f"<i>{get_text('error_inserting_image', lang)}: {str(img_error)}</i>", normal_style))
                 story.append(Spacer(1, 20))
         
         # Resultados de predicción
-        story.append(Paragraph("🤖 Resultados de Predicción", heading_style))
+        story.append(Paragraph(get_text('prediction_results', lang), heading_style))
         
         valid_preds = {k: v for k, v in predictions.items() if v is not None}
         valid_probs = {k: v for k, v in probabilities.items() if v is not None}
@@ -522,35 +534,35 @@ def generate_pdf_report(image, predictions, probabilities, agreement_metrics, pr
                 pred_probs = valid_probs[model_name]
                 
                 story.append(Paragraph(f"<b>{model_name}:</b>", normal_style))
-                story.append(Paragraph(f"• Predicción: <b>{CLASS_NAMES[pred_class]}</b>", normal_style))
-                story.append(Paragraph(f"• Confianza: <b>{pred_probs[pred_class]:.1%}</b>", normal_style))
+                story.append(Paragraph(f"• {get_text('prediction', lang)}: <b>{class_names[pred_class]}</b>", normal_style))
+                story.append(Paragraph(f"• {get_text('confidence_label', lang)}: <b>{pred_probs[pred_class]:.1%}</b>", normal_style))
                 
                 # Añadir todas las probabilidades
-                prob_text = "• Distribución de probabilidades:<br/>"
-                for i, class_name in enumerate(CLASS_NAMES):
+                prob_text = f"• {get_text('probability_distribution_label', lang)}:<br/>"
+                for i, class_name in enumerate(class_names):
                     prob_text += f"&nbsp;&nbsp;&nbsp;&nbsp;- {class_name}: {pred_probs[i]:.1%}<br/>"
                 
                 story.append(Paragraph(prob_text, normal_style))
                 story.append(Spacer(1, 10))
         
         # Análisis de concordancia
-        story.append(Paragraph("🤝 Análisis de Concordancia", heading_style))
+        story.append(Paragraph(get_text('agreement_analysis_pdf', lang), heading_style))
         
         if agreement_metrics:
             if agreement_metrics.get('all_models_agree', False):
-                story.append(Paragraph("✅ <b>Todos los modelos están de acuerdo</b> en la predicción", normal_style))
+                story.append(Paragraph(f"✅ <b>{get_text('all_models_agree', lang)}</b>", normal_style))
             else:
-                story.append(Paragraph("⚠️ <b>Los modelos no concuerdan completamente</b>", normal_style))
+                story.append(Paragraph(f"⚠️ <b>{get_text('models_disagree', lang)}</b>", normal_style))
             
             # Detalles de concordancia por pares
-            story.append(Paragraph("<b>Detalles por pares de modelos:</b>", normal_style))
+            story.append(Paragraph(f"<b>{get_text('pair_details', lang)}:</b>", normal_style))
             for comparison, metrics in agreement_metrics.items():
                 if comparison != 'all_models_agree':
                     models = comparison.split('_vs_')
-                    agreement_text = "Concuerdan" if metrics['agreement'] else "No concuerdan"
+                    agreement_text = get_text('agree', lang) if metrics['agreement'] else get_text('disagree', lang)
                     story.append(Paragraph(
-                        f"• {models[0]} vs {models[1]}: <b>{agreement_text}</b> "
-                        f"({CLASS_NAMES[metrics['pred1']]} vs {CLASS_NAMES[metrics['pred2']]})",
+                        f"• {models[0]} {get_text('vs', lang)} {models[1]}: <b>{agreement_text}</b> "
+                        f"({class_names[metrics['pred1']]} {get_text('vs', lang)} {class_names[metrics['pred2']]})",
                         normal_style
                     ))
         
@@ -558,18 +570,18 @@ def generate_pdf_report(image, predictions, probabilities, agreement_metrics, pr
         
         # Distancias entre modelos
         if probability_distances:
-            story.append(Paragraph("📏 Distancias entre Distribuciones de Probabilidad", heading_style))
+            story.append(Paragraph(get_text('probability_distances_pdf', lang), heading_style))
             
             for comparison, distances in probability_distances.items():
                 models = comparison.split('_vs_')
-                story.append(Paragraph(f"<b>{models[0]} vs {models[1]}:</b>", normal_style))
-                story.append(Paragraph(f"• Distancia Euclidiana: {distances['euclidean']:.4f}", normal_style))
-                story.append(Paragraph(f"• Distancia Coseno: {distances['cosine']:.4f}", normal_style))
-                story.append(Paragraph(f"• Divergencia KL: {distances['kl_divergence']:.4f}", normal_style))
+                story.append(Paragraph(f"<b>{models[0]} {get_text('vs', lang)} {models[1]}:</b>", normal_style))
+                story.append(Paragraph(f"• {get_text('euclidean_distance', lang)}: {distances['euclidean']:.4f}", normal_style))
+                story.append(Paragraph(f"• {get_text('cosine_distance', lang)}: {distances['cosine']:.4f}", normal_style))
+                story.append(Paragraph(f"• {get_text('kl_divergence', lang)}: {distances['kl_divergence']:.4f}", normal_style))
                 story.append(Spacer(1, 10))
         
         # Interpretación médica
-        story.append(Paragraph("🏥 Interpretación Clínica", heading_style))
+        story.append(Paragraph(get_text('clinical_interpretation_pdf', lang), heading_style))
         
         # Determinar la clase más probable
         if valid_probs:
@@ -577,41 +589,40 @@ def generate_pdf_report(image, predictions, probabilities, agreement_metrics, pr
             most_likely_class = np.argmax(avg_probs)
             confidence = avg_probs[most_likely_class]
             
-            story.append(Paragraph(f"<b>Clasificación consenso:</b> {CLASS_NAMES[most_likely_class]}", normal_style))
-            story.append(Paragraph(f"<b>Confianza promedio:</b> {confidence:.1%}", normal_style))
-            story.append(Paragraph(f"<b>Descripción:</b> {CLASS_DESCRIPTIONS[CLASS_NAMES[most_likely_class]]}", normal_style))
+            story.append(Paragraph(f"<b>{get_text('consensus_classification_pdf', lang)}:</b> {class_names[most_likely_class]}", normal_style))
+            story.append(Paragraph(f"<b>{get_text('average_confidence_pdf', lang)}:</b> {confidence:.1%}", normal_style))
+            story.append(Paragraph(f"<b>{get_text('description_pdf', lang)}:</b> {class_descriptions[class_names[most_likely_class]]}", normal_style))
             
             # Recomendaciones basadas en el resultado
             recommendations = {
-                0: "El análisis sugiere ausencia de tejido tumoral. Se recomienda seguimiento rutinario según protocolo clínico.",
-                1: "Se detecta tejido tumoral no viable (necrótico). Evaluar respuesta al tratamiento previo y considerar ajustes terapéuticos.",
-                2: "Se detecta tejido tumoral viable activo. Considerar opciones de tratamiento inmediato según guidelines oncológicos.",
-                3: "Se detecta tejido mixto con características heterogéneas. Se recomienda análisis histopatológico adicional y evaluación multidisciplinaria."
+                0: get_text('recommendation_non_tumor', lang),
+                1: get_text('recommendation_non_viable', lang),
+                2: get_text('recommendation_viable', lang),
+                3: get_text('recommendation_mixed', lang)
             }
             
             recommendation = recommendations.get(most_likely_class, "Consultar con especialista para interpretación adicional.")
             
             story.append(Spacer(1, 15))
-            story.append(Paragraph(f"<b>💊 Recomendación Clínica:</b>", normal_style))
+            story.append(Paragraph(f"<b>💊 {get_text('clinical_recommendation', lang)}:</b>", normal_style))
             story.append(Paragraph(recommendation, normal_style))
         
         # Disclaimer
         story.append(Spacer(1, 30))
-        story.append(Paragraph("⚠️ Nota Importante", heading_style))
+        story.append(Paragraph(get_text('important_note', lang), heading_style))
         
-        disclaimer_text = """
-        <b>Este análisis es una herramienta de apoyo diagnóstico basada en inteligencia artificial.</b><br/><br/>
+        disclaimer_text = f"""
+        <b>{get_text('pdf_disclaimer_title', lang)}</b><br/><br/>
         
-        Los resultados deben ser interpretados por un profesional médico cualificado y <b>NO sustituyen 
-        el juicio clínico profesional</b>.<br/><br/>
+        {get_text('pdf_disclaimer_main', lang)}<br/><br/>
         
-        <b>Se recomienda encarecidamente:</b><br/>
-        • Correlacionar estos resultados con otros estudios clínicos, radiológicos e histopatológicos<br/>
-        • Considerar el contexto clínico completo del paciente<br/>
-        • Seguir las guidelines y protocolos médicos establecidos<br/>
-        • Buscar opinión de especialistas en oncología y patología cuando sea apropiado<br/><br/>
+        <b>{get_text('pdf_disclaimer_recommendations', lang)}</b><br/>
+        • {get_text('pdf_disclaimer_item_1', lang)}<br/>
+        • {get_text('pdf_disclaimer_item_2', lang)}<br/>
+        • {get_text('pdf_disclaimer_item_3', lang)}<br/>
+        • {get_text('pdf_disclaimer_item_4', lang)}<br/><br/>
         
-        <b>Este análisis no sustituye el juicio clínico profesional.</b>
+        <b>{get_text('pdf_disclaimer_final', lang)}</b>
         """
         
         story.append(Paragraph(disclaimer_text, normal_style))
@@ -645,28 +656,44 @@ def generate_pdf_report(image, predictions, probabilities, agreement_metrics, pr
         return error_buffer
 
 def main():
+    # Language selector in sidebar
+    with st.sidebar:
+        st.markdown(f"### {get_text('sidebar_language', st.session_state.language)}")
+        
+        # Language selector
+        language_names = get_language_names()
+        current_lang_name = language_names[st.session_state.language]
+        
+        selected_lang_name = st.selectbox(
+            "",
+            options=list(language_names.values()),
+            index=list(language_names.values()).index(current_lang_name),
+            key="language_selector"
+        )
+        
+        # Update language if changed
+        selected_lang_code = [k for k, v in language_names.items() if v == selected_lang_name][0]
+        if selected_lang_code != st.session_state.language:
+            st.session_state.language = selected_lang_code
+            st.rerun()
+    
     # Título principal
-    st.markdown('<h1 class="main-header">🔬 Clasificador de Osteosarcoma</h1>', unsafe_allow_html=True)
+    st.markdown(f'<h1 class="main-header">{get_text("main_header", st.session_state.language)}</h1>', unsafe_allow_html=True)
     
     # Información en el sidebar
     with st.sidebar:
-        st.markdown("### 📋 Información del Sistema")
+        st.markdown(f"### {get_text('sidebar_system_info', st.session_state.language)}")
         
-        st.markdown("""
+        st.markdown(f"""
         <div class="info-box">
-        <h4>🎯 Objetivo</h4>
-        <p>Clasificación automática de imágenes histopatológicas para detección y análisis de osteosarcoma utilizando 4 modelos de deep learning.</p>
+        <h4>{get_text('sidebar_objective', st.session_state.language)}</h4>
+        <p>{get_text('sidebar_objective_desc', st.session_state.language)}</p>
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown("### 🤖 Modelos Disponibles")
+        st.markdown(f"### {get_text('sidebar_available_models', st.session_state.language)}")
         
-        model_descriptions = {
-            'VGG16': 'Arquitectura clásica profunda',
-            'ResNet50': 'Red residual avanzada',
-            'MobileNetV2': 'Modelo eficiente y ligero',
-            'EfficientNetB0': 'Balance óptimo precisión/eficiencia'
-        }
+        model_descriptions = get_model_descriptions(st.session_state.language)
         
         for model, desc in model_descriptions.items():
             st.markdown(f"""
@@ -676,28 +703,29 @@ def main():
             </div>
             """, unsafe_allow_html=True)
         
-        st.markdown("### 🏥 Clases de Diagnóstico")
+        st.markdown(f"### {get_text('sidebar_diagnosis_classes', st.session_state.language)}")
         
-        for class_name, description in CLASS_DESCRIPTIONS.items():
+        class_descriptions = get_current_class_descriptions()
+        for class_name, description in class_descriptions.items():
             st.markdown(f"**{class_name}:** {description}")
     
     # Cargar modelos
-    with st.spinner('🔄 Cargando modelos de IA...'):
+    with st.spinner(get_text('loading_models', st.session_state.language)):
         models = load_models()
     
     if not models:
-        st.error("❌ No se pudieron cargar los modelos. Verifica que los archivos .h5 estén en la carpeta 'models/'")
+        st.error(get_text('error_loading_models', st.session_state.language))
         return
     
-    st.success(f"✅ {len(models)} modelos cargados exitosamente")
+    st.success(f"✅ {len(models)} {get_text('models_loaded', st.session_state.language)}")
     
     # Sección de carga de imagen
-    st.markdown('<h2 class="sub-header">📤 Cargar Imagen para Análisis</h2>', unsafe_allow_html=True)
+    st.markdown(f'<h2 class="sub-header">{get_text("sub_header_upload", st.session_state.language)}</h2>', unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader(
-        "Selecciona una imagen histopatológica",
+        get_text('file_upload_label', st.session_state.language),
         type=['png', 'jpg', 'jpeg', 'tiff', 'bmp'],
-        help="Formatos soportados: PNG, JPG, JPEG, TIFF, BMP"
+        help=get_text('file_upload_help', st.session_state.language)
     )
     
     if uploaded_file is not None:
@@ -717,34 +745,33 @@ def main():
         col1, col2 = st.columns([1, 2])
         
         with col1:
-            st.image(image, caption="Imagen Original", use_container_width=True)
+            st.image(image, caption=get_text('image_original', st.session_state.language), use_container_width=True)
             
             # Información de la imagen
             st.markdown(f"""
             <div class="info-box">
-            <strong>Información de la imagen:</strong><br>
-            📏 Dimensiones: {image.size[0]} × {image.size[1]} px<br>
-            🎨 Modo: {image.mode}<br>
-            📁 Formato: {image.format}<br>
-            💾 Tamaño: {len(uploaded_file.getvalue()) / 1024:.1f} KB
+            <strong>{get_text('image_info_title', st.session_state.language)}</strong><br>
+            📏 {get_text('image_dimensions', st.session_state.language)}: {image.size[0]} × {image.size[1]} {get_text('px', st.session_state.language)}<br>
+            🎨 {get_text('image_mode', st.session_state.language)}: {image.mode}<br>
+            📁 {get_text('image_format', st.session_state.language)}: {image.format}<br>
+            💾 {get_text('image_size', st.session_state.language)}: {len(uploaded_file.getvalue()) / 1024:.1f} {get_text('kb', st.session_state.language)}
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             # Imagen redimensionada para análisis
             resized_image = image.resize((224, 224))
-            st.image(resized_image, caption="Imagen Redimensionada (224×224)", use_container_width=True)
+            st.image(resized_image, caption=get_text('image_resized', st.session_state.language), use_container_width=True)
             
-            st.markdown("""
+            st.markdown(f"""
             <div class="warning-box">
-            <strong>⚠️ Nota:</strong> La imagen será redimensionada a 224×224 píxeles para el análisis, 
-            manteniendo la calidad necesaria para la clasificación.
+            <strong>⚠️ {get_text('important_note', st.session_state.language)[:4]}:</strong> {get_text('image_resize_note', st.session_state.language)}
             </div>
             """, unsafe_allow_html=True)
         
         # Botón de análisis
-        if st.button("🚀 Iniciar Análisis", type="primary", use_container_width=True):
-            with st.spinner('🔍 Analizando imagen con modelos de IA...'):
+        if st.button(get_text('btn_start_analysis', st.session_state.language), type="primary", use_container_width=True):
+            with st.spinner(get_text('loading_analysis', st.session_state.language)):
                 # Realizar predicciones
                 predictions, probabilities = predict_with_models(image, models)
                 
@@ -769,7 +796,7 @@ def main():
             analyzed_image = st.session_state.analyzed_image
             
             # Mostrar resultados
-            st.markdown('<h2 class="sub-header">📊 Resultados del Análisis</h2>', unsafe_allow_html=True)
+            st.markdown(f'<h2 class="sub-header">{get_text("sub_header_results", st.session_state.language)}</h2>', unsafe_allow_html=True)
             
             # Resumen ejecutivo
             valid_preds = {k: v for k, v in predictions.items() if v is not None}
@@ -784,35 +811,38 @@ def main():
                 # Mostrar consenso
                 col1, col2, col3 = st.columns(3)
                 
+                class_names = get_current_class_names()
+                
                 with col1:
                     st.markdown(f"""
                     <div class="metric-card">
-                    <h3>🎯 Clasificación Consenso</h3>
-                    <h2>{CLASS_NAMES[consensus_class]}</h2>
+                    <h3>{get_text('consensus_classification', st.session_state.language)}</h3>
+                    <h2>{class_names[consensus_class]}</h2>
                     </div>
                     """, unsafe_allow_html=True)
                 
                 with col2:
                     st.markdown(f"""
                     <div class="metric-card">
-                    <h3>📈 Confianza Promedio</h3>
+                    <h3>{get_text('average_confidence', st.session_state.language)}</h3>
                     <h2>{consensus_confidence:.1%}</h2>
                     </div>
                     """, unsafe_allow_html=True)
                 
                 with col3:
-                    agreement_status = "✅ Sí" if agreement_metrics.get('all_models_agree', False) else "⚠️ No"
+                    agreement_status = get_text('agreement_yes', st.session_state.language) if agreement_metrics.get('all_models_agree', False) else get_text('agreement_no', st.session_state.language)
                     st.markdown(f"""
                     <div class="metric-card">
-                    <h3>🤝 Concordancia Total</h3>
+                    <h3>{get_text('total_agreement', st.session_state.language)}</h3>
                     <h2>{agreement_status}</h2>
                     </div>
                     """, unsafe_allow_html=True)
             
             # Resultados detallados por modelo
-            st.markdown("### 🔍 Resultados Detallados por Modelo")
+            st.markdown(f"### {get_text('detailed_results', st.session_state.language)}")
             
             results_cols = st.columns(2)
+            model_descriptions = get_model_descriptions(st.session_state.language)
             
             for idx, (model_name, pred_class) in enumerate(valid_preds.items()):
                 col_idx = idx % 2
@@ -824,21 +854,21 @@ def main():
                     st.markdown(f"""
                     <div class="model-card">
                     <h4>{model_name}</h4>
-                    <p><strong>Predicción:</strong> {CLASS_NAMES[pred_class]}</p>
-                    <p><strong>Confianza:</strong> {confidence:.1%}</p>
-                    <p><strong>Descripción:</strong> {models[model_name]['description']}</p>
+                    <p><strong>{get_text('prediction', st.session_state.language)}:</strong> {class_names[pred_class]}</p>
+                    <p><strong>{get_text('confidence', st.session_state.language)}:</strong> {confidence:.1%}</p>
+                    <p><strong>{get_text('description', st.session_state.language)}:</strong> {model_descriptions[model_name]}</p>
                     </div>
                     """, unsafe_allow_html=True)
                     
                     # Mostrar todas las probabilidades
                     prob_df = pd.DataFrame({
-                        'Clase': CLASS_NAMES,
-                        'Probabilidad': [f"{p:.1%}" for p in probs]
+                        get_text('class', st.session_state.language): class_names,
+                        get_text('probability', st.session_state.language): [f"{p:.1%}" for p in probs]
                     })
                     st.dataframe(prob_df, use_container_width=True, hide_index=True)
             
             # Visualizaciones
-            st.markdown("### 📈 Visualizaciones")
+            st.markdown(f"### {get_text('visualizations', st.session_state.language)}")
             
             # Crear gráficos de predicción
             fig1, fig2 = create_prediction_visualization(probabilities, predictions)
@@ -853,7 +883,7 @@ def main():
                     st.plotly_chart(fig2, use_container_width=True)
             
             # Análisis de concordancia y distancias
-            st.markdown("### 🔗 Análisis de Concordancia y Distancias")
+            st.markdown(f"### {get_text('agreement_concordance', st.session_state.language)}")
             
             # Crear gráficos de concordancia
             fig3, fig4 = create_agreement_visualization(agreement_metrics, probability_distances)
@@ -868,22 +898,22 @@ def main():
                     st.plotly_chart(fig4, use_container_width=True)
             
             # Métricas estadísticas detalladas
-            st.markdown("### 📊 Métricas Estadísticas Detalladas")
+            st.markdown(f"### {get_text('statistical_analysis', st.session_state.language)}")
             
             # Tabla de concordancia
             if agreement_metrics:
-                st.markdown("#### 🤝 Análisis de Concordancia entre Modelos")
+                st.markdown(f"#### {get_text('agreement_analysis', st.session_state.language)}")
                 
                 agreement_data = []
                 for comparison, metrics in agreement_metrics.items():
                     if comparison != 'all_models_agree':
                         models_pair = comparison.split('_vs_')
                         agreement_data.append({
-                            'Modelo 1': models_pair[0],
-                            'Modelo 2': models_pair[1],
-                            'Predicción 1': CLASS_NAMES[metrics['pred1']],
-                            'Predicción 2': CLASS_NAMES[metrics['pred2']],
-                            'Concordancia': '✅ Sí' if metrics['agreement'] else '❌ No'
+                            get_text('model_1', st.session_state.language): models_pair[0],
+                            get_text('model_2', st.session_state.language): models_pair[1],
+                            get_text('prediction_1', st.session_state.language): class_names[metrics['pred1']],
+                            get_text('prediction_2', st.session_state.language): class_names[metrics['pred2']],
+                            get_text('concordance', st.session_state.language): get_text('agreement_yes', st.session_state.language)[2:] if metrics['agreement'] else get_text('agreement_no', st.session_state.language)[2:]
                         })
                 
                 if agreement_data:
@@ -892,77 +922,79 @@ def main():
             
             # Tabla de distancias
             if probability_distances:
-                st.markdown("#### 📏 Distancias entre Distribuciones de Probabilidad")
+                st.markdown(f"#### {get_text('distance_analysis', st.session_state.language)}")
                 
                 distance_data = []
                 for comparison, distances in probability_distances.items():
                     models_pair = comparison.split('_vs_')
                     distance_data.append({
-                        'Modelo 1': models_pair[0],
-                        'Modelo 2': models_pair[1],
-                        'Distancia Euclidiana': f"{distances['euclidean']:.4f}",
-                        'Distancia Coseno': f"{distances['cosine']:.4f}",
-                        'Divergencia KL': f"{distances['kl_divergence']:.4f}"
+                        get_text('model_1', st.session_state.language): models_pair[0],
+                        get_text('model_2', st.session_state.language): models_pair[1],
+                        get_text('euclidean_distance', st.session_state.language): f"{distances['euclidean']:.4f}",
+                        get_text('cosine_distance', st.session_state.language): f"{distances['cosine']:.4f}",
+                        get_text('kl_divergence', st.session_state.language): f"{distances['kl_divergence']:.4f}"
                     })
                 
                 if distance_data:
                     df_distances = pd.DataFrame(distance_data)
                     st.dataframe(df_distances, use_container_width=True, hide_index=True)
                     
-                    st.markdown("""
+                    st.markdown(f"""
                     <div class="info-box">
-                    <strong>💡 Interpretación de Distancias:</strong><br>
-                    • <strong>Distancia Euclidiana:</strong> Distancia geométrica entre vectores de probabilidad (menor = mayor similitud)<br>
-                    • <strong>Distancia Coseno:</strong> Similitud angular entre vectores (menor = mayor similitud)<br>
-                    • <strong>Divergencia KL:</strong> Medida de diferencia entre distribuciones (menor = mayor similitud)
+                    <strong>{get_text('distance_interpretation', st.session_state.language)}</strong><br>
+                    • <strong>{get_text('euclidean_distance', st.session_state.language)}:</strong> {get_text('euclidean_desc', st.session_state.language)}<br>
+                    • <strong>{get_text('cosine_distance', st.session_state.language)}:</strong> {get_text('cosine_desc', st.session_state.language)}<br>
+                    • <strong>{get_text('kl_divergence', st.session_state.language)}:</strong> {get_text('kl_desc', st.session_state.language)}
                     </div>
                     """, unsafe_allow_html=True)
             
             # Interpretación clínica
-            st.markdown("### 🏥 Interpretación Clínica")
+            st.markdown(f"### {get_text('clinical_interpretation', st.session_state.language)}")
+            
+            class_descriptions = get_current_class_descriptions()
             
             if valid_probs:
                 st.markdown(f"""
                 <div class="success-box">
-                <h4>📋 Resumen Diagnóstico</h4>
-                <p><strong>Clasificación principal:</strong> {CLASS_NAMES[consensus_class]}</p>
-                <p><strong>Descripción:</strong> {CLASS_DESCRIPTIONS[CLASS_NAMES[consensus_class]]}</p>
-                <p><strong>Confianza del consenso:</strong> {consensus_confidence:.1%}</p>
-                <p><strong>Concordancia entre modelos:</strong> {"Alta" if agreement_metrics.get('all_models_agree', False) else "Parcial"}</p>
+                <h4>{get_text('diagnostic_summary', st.session_state.language)}</h4>
+                <p><strong>{get_text('main_classification', st.session_state.language)}:</strong> {class_names[consensus_class]}</p>
+                <p><strong>{get_text('description', st.session_state.language)}:</strong> {class_descriptions[class_names[consensus_class]]}</p>
+                <p><strong>{get_text('consensus_confidence', st.session_state.language)}:</strong> {consensus_confidence:.1%}</p>
+                <p><strong>{get_text('model_concordance', st.session_state.language)}:</strong> {get_text('concordance_high', st.session_state.language) if agreement_metrics.get('all_models_agree', False) else get_text('concordance_partial', st.session_state.language)}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 # Recomendaciones
                 if consensus_class == 0:  # Non-Tumor
-                    recommendation = "👍 El análisis sugiere ausencia de tejido tumoral. Se recomienda seguimiento rutinario según protocolo clínico."
+                    recommendation = get_text('recommendation_non_tumor', st.session_state.language)
                 elif consensus_class == 1:  # Non-Viable-Tumor
-                    recommendation = "⚡ Se detecta tejido tumoral no viable (necrótico). Evaluar respuesta al tratamiento previo y considerar ajustes terapéuticos."
+                    recommendation = get_text('recommendation_non_viable', st.session_state.language)
                 elif consensus_class == 2:  # Viable
-                    recommendation = "⚠️ Se detecta tejido tumoral viable activo. Considerar opciones de tratamiento inmediato según guidelines oncológicos."
+                    recommendation = get_text('recommendation_viable', st.session_state.language)
                 else:  # Mixed
-                    recommendation = "🔄 Se detecta tejido mixto con características heterogéneas. Se recomienda análisis histopatológico adicional y evaluación multidisciplinaria."
+                    recommendation = get_text('recommendation_mixed', st.session_state.language)
                 
                 st.markdown(f"""
                 <div class="warning-box">
-                <h4>💊 Recomendación Clínica</h4>
+                <h4>{get_text('clinical_recommendation', st.session_state.language)}</h4>
                 <p>{recommendation}</p>
                 </div>
                 """, unsafe_allow_html=True)
             
             # Exportar PDF
-            st.markdown("### 📄 Exportar Reporte")
+            st.markdown(f"### {get_text('export_report', st.session_state.language)}")
             
             col1, col2 = st.columns([3, 1])
             
             with col1:
-                if st.button("📥 Generar Reporte PDF", type="secondary", use_container_width=True):
-                    with st.spinner('📝 Generando reporte PDF...'):
+                if st.button(get_text('btn_generate_pdf', st.session_state.language), type="secondary", use_container_width=True):
+                    with st.spinner(get_text('loading_pdf', st.session_state.language)):
                         try:
                             # Verificar que tenemos datos válidos
                             valid_preds = {k: v for k, v in predictions.items() if v is not None}
                             
                             if not valid_preds:
-                                st.error("❌ No hay predicciones válidas para generar el reporte")
+                                st.error(get_text('error_no_valid_predictions', st.session_state.language))
                             else:
                                 pdf_buffer = generate_pdf_report(
                                     analyzed_image, predictions, probabilities, 
@@ -974,29 +1006,29 @@ def main():
                                     pdf_data = pdf_buffer.getvalue()
                                     if len(pdf_data) > 0:
                                         st.download_button(
-                                            label="⬇️ Descargar Reporte PDF",
+                                            label=get_text('btn_download_pdf', st.session_state.language),
                                             data=pdf_data,
                                             file_name=f"reporte_osteosarcoma_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                                             mime="application/pdf",
                                             use_container_width=True
                                         )
-                                        st.success("✅ Reporte PDF generado exitosamente")
-                                        st.info(f"📊 Tamaño del archivo: {len(pdf_data) / 1024:.1f} KB")
+                                        st.success(get_text('pdf_generated', st.session_state.language))
+                                        st.info(f"📊 {get_text('file_size', st.session_state.language)}: {len(pdf_data) / 1024:.1f} {get_text('kb', st.session_state.language)}")
                                     else:
-                                        st.error("❌ Error: El archivo PDF está vacío")
+                                        st.error(get_text('error_empty_pdf', st.session_state.language))
                                 else:
-                                    st.error("❌ Error al generar el buffer del PDF")
+                                    st.error(get_text('error_pdf_buffer', st.session_state.language))
                                     
                         except Exception as pdf_error:
-                            st.error(f"❌ Error al generar el PDF: {str(pdf_error)}")
-                            st.warning("💡 Intente recargar la página y volver a subir la imagen")
+                            st.error(f"{get_text('error_generating_pdf', st.session_state.language)}: {str(pdf_error)}")
+                            st.warning(get_text('error_reload_suggestion', st.session_state.language))
                             
                             # Mostrar detalles del error en modo debug
-                            if st.checkbox("🔍 Mostrar detalles del error"):
+                            if st.checkbox(get_text('error_show_details', st.session_state.language)):
                                 st.code(str(pdf_error))
             
             with col2:
-                if st.button("🔄 Nuevo Análisis", use_container_width=True):
+                if st.button(get_text('btn_new_analysis', st.session_state.language), use_container_width=True):
                     # Limpiar session_state
                     for key in ['predictions', 'probabilities', 'agreement_metrics', 
                                'probability_distances', 'analyzed_image', 'analysis_completed']:
@@ -1005,64 +1037,60 @@ def main():
                     st.rerun()
             
             # Disclaimer médico
-            st.markdown("""
+            st.markdown(f"""
             <div style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); padding: 1rem; border-radius: 10px; margin: 2rem 0;">
-            <h4>⚠️ Importante - Disclaimer Médico</h4>
-            <p>Este sistema es una <strong>herramienta de apoyo diagnóstico</strong> basada en inteligencia artificial. 
-            Los resultados presentados <strong>NO constituyen un diagnóstico médico definitivo</strong> y deben ser 
-            interpretados exclusivamente por profesionales médicos cualificados.</p>
+            <h4>{get_text('medical_disclaimer', st.session_state.language)}</h4>
+            <p>{get_text('disclaimer_text', st.session_state.language)}</p>
             
-            <p>Se recomienda encarecidamente:</p>
+            <p>{get_text('disclaimer_recommendations', st.session_state.language)}</p>
             <ul>
-            <li>Correlacionar estos resultados con estudios clínicos, radiológicos e histopatológicos adicionales</li>
-            <li>Considerar el contexto clínico completo del paciente</li>
-            <li>Seguir las guidelines y protocolos médicos establecidos</li>
-            <li>Buscar opinión de especialistas en oncología y patología cuando sea apropiado</li>
+            <li>{get_text('disclaimer_item_1', st.session_state.language)}</li>
+            <li>{get_text('disclaimer_item_2', st.session_state.language)}</li>
+            <li>{get_text('disclaimer_item_3', st.session_state.language)}</li>
+            <li>{get_text('disclaimer_item_4', st.session_state.language)}</li>
             </ul>
             
-            <p><strong>Este análisis no sustituye el juicio clínico profesional.</strong></p>
+            <p><strong>{get_text('disclaimer_final', st.session_state.language)}</strong></p>
             </div>
             """, unsafe_allow_html=True)
     
     else:
         # No hay imagen cargada
-        st.markdown("""
+        st.markdown(f"""
         <div class="info-box">
-        <h4>👆 Instrucciones</h4>
-        <p>Para comenzar el análisis, por favor:</p>
+        <h4>{get_text('instructions_title', st.session_state.language)}</h4>
+        <p>{get_text('instructions_intro', st.session_state.language)}</p>
         <ol>
-        <li>📤 <strong>Carga una imagen</strong> histopatológica usando el selector de archivos arriba</li>
-        <li>🚀 <strong>Presiona "Iniciar Análisis"</strong> para procesar la imagen con los 4 modelos de IA</li>
-        <li>📊 <strong>Revisa los resultados</strong> detallados y las métricas estadísticas</li>
-        <li>📄 <strong>Descarga el reporte PDF</strong> con todos los hallazgos</li>
+        <li>{get_text('instruction_1', st.session_state.language)}</li>
+        <li>{get_text('instruction_2', st.session_state.language)}</li>
+        <li>{get_text('instruction_3', st.session_state.language)}</li>
+        <li>{get_text('instruction_4', st.session_state.language)}</li>
         </ol>
         </div>
         """, unsafe_allow_html=True)
         
         # Mostrar información adicional cuando no hay imagen
-        st.markdown("### 📋 Información del Sistema")
+        st.markdown(f"### {get_text('sidebar_system_info', st.session_state.language)}")
         
-        st.markdown("""
+        st.markdown(f"""
         <div class="warning-box">
-        <h4>🔬 Capacidades del Sistema</h4>
-        <p>Este sistema puede analizar imágenes histopatológicas de osteosarcoma utilizando 4 modelos de deep learning diferentes:</p>
+        <h4>{get_text('system_capabilities', st.session_state.language)}</h4>
+        <p>{get_text('system_capabilities_desc', st.session_state.language)}</p>
         <ul>
-        <li><strong>VGG16:</strong> Arquitectura clásica profunda para análisis detallado</li>
-        <li><strong>ResNet50:</strong> Red residual con conexiones skip para mejor precisión</li>
-        <li><strong>MobileNetV2:</strong> Modelo eficiente optimizado para velocidad</li>
-        <li><strong>EfficientNetB0:</strong> Balance óptimo entre precisión y eficiencia</li>
+        <li><strong>VGG16:</strong> {get_text('vgg16_full_desc', st.session_state.language)}</li>
+        <li><strong>ResNet50:</strong> {get_text('resnet50_full_desc', st.session_state.language)}</li>
+        <li><strong>MobileNetV2:</strong> {get_text('mobilenetv2_full_desc', st.session_state.language)}</li>
+        <li><strong>EfficientNetB0:</strong> {get_text('efficientnetb0_full_desc', st.session_state.language)}</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown("""
+        class_descriptions = get_current_class_descriptions()
+        st.markdown(f"""
         <div class="success-box">
-        <h4>🎯 Clases de Clasificación</h4>
+        <h4>{get_text('classification_classes', st.session_state.language)}</h4>
         <ul>
-        <li><strong>Non-Tumor:</strong> Tejido sin presencia de tumor</li>
-        <li><strong>Non-Viable-Tumor:</strong> Tejido tumoral no viable (necrótico)</li>
-        <li><strong>Viable:</strong> Tejido tumoral viable (activo)</li>
-        <li><strong>Mixed:</strong> Tejido mixto con características combinadas</li>
+        """ + ''.join([f"<li><strong>{class_name}:</strong> {desc}</li>" for class_name, desc in class_descriptions.items()]) + """
         </ul>
         </div>
         """, unsafe_allow_html=True)
